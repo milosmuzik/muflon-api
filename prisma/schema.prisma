@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Interpret {
+  id          String   @id @default(uuid())
+  klic        String   @unique
+  nazev       String
+  aliasy      String[] @default([])
+  stav        String   @default("aktivni")
+  zeme        String?
+  rokVzniku   Int?
+  popisCs     String?
+  popisEn     String?
+  historieCs  String?
+  historieEn  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  kanaly      KanalPrislusnost[]
+  clenstvi    Clenstvi[]
+  alba        AlbumInterpret[]
+  skladby     SkladbaInterpret[]
+  pole        PoleZdroj[]
+}
+
+model KanalPrislusnost {
+  id          String    @id @default(uuid())
+  interpretId String
+  interpret   Interpret @relation(fields: [interpretId], references: [id], onDelete: Cascade)
+  kanal       String
+  stav        String    @default("aktivni")
+  @@unique([interpretId, kanal])
+  @@index([kanal, stav])
+}
+
+model Hudebnik {
+  id            String   @id @default(uuid())
+  klic          String   @unique
+  jmeno         String
+  aliasy        String[] @default([])
+  datumNarozeni String?
+  datumUmrti    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  clenstvi      Clenstvi[]
+  skladby       SkladbaHudebnik[]
+  pole          PoleZdroj[]
+}
+
+model Clenstvi {
+  id          String    @id @default(uuid())
+  hudebnikId  String
+  hudebnik    Hudebnik  @relation(fields: [hudebnikId], references: [id], onDelete: Cascade)
+  interpretId String
+  interpret   Interpret @relation(fields: [interpretId], references: [id], onDelete: Cascade)
+  role        String?
+  nastroj     String?
+  obdobiOd    String?
+  obdobiDo    String?
+}
+
+model Album {
+  id          String   @id @default(uuid())
+  nazev       String
+  datumVydani String?
+  createdAt   DateTime @default(now())
+  interpreti  AlbumInterpret[]
+  pole        PoleZdroj[]
+}
+
+model AlbumInterpret {
+  id          String    @id @default(uuid())
+  albumId     String
+  album       Album     @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  interpretId String
+  interpret   Interpret @relation(fields: [interpretId], references: [id], onDelete: Cascade)
+}
+
+model Skladba {
+  id          String   @id @default(uuid())
+  nazev       String
+  nazevSurovy String
+  hosteRaw    String[] @default([])
+  vPlaylistu  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  interpreti  SkladbaInterpret[]
+  hosteOsoby  SkladbaHudebnik[]
+}
+
+model SkladbaInterpret {
+  id          String    @id @default(uuid())
+  skladbaId   String
+  skladba     Skladba   @relation(fields: [skladbaId], references: [id], onDelete: Cascade)
+  interpretId String
+  interpret   Interpret @relation(fields: [interpretId], references: [id], onDelete: Cascade)
+  role        String    @default("primarni")
+  @@unique([skladbaId, interpretId, role])
+}
+
+model SkladbaHudebnik {
+  id         String   @id @default(uuid())
+  skladbaId  String
+  skladba    Skladba  @relation(fields: [skladbaId], references: [id], onDelete: Cascade)
+  hudebnikId String
+  hudebnik   Hudebnik @relation(fields: [hudebnikId], references: [id], onDelete: Cascade)
+  role       String   @default("host")
+}
+
+model PoleZdroj {
+  id          String     @id @default(uuid())
+  pole        String
+  zdroj       String
+  url         String?
+  jazyk       String?
+  createdAt   DateTime   @default(now())
+  interpretId String?
+  interpret   Interpret? @relation(fields: [interpretId], references: [id], onDelete: Cascade)
+  hudebnikId  String?
+  hudebnik    Hudebnik?  @relation(fields: [hudebnikId], references: [id], onDelete: Cascade)
+  albumId     String?
+  album       Album?     @relation(fields: [albumId], references: [id], onDelete: Cascade)
+}
+
+model IngestStav {
+  id        String   @id @default("cz")
+  radku     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
