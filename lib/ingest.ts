@@ -64,34 +64,24 @@ export async function ingestKanal(kanal: "cz" | "com") {
   const unique = new Map<string, string>();
   for (const r of parsed) unique.set(r.klic, r.primarni);
   const klice = Array.from(unique.keys());
-
-  const exist = await prisma.interpret.findMany({
-    where: { klic: { in: klice } },
-    select: { id: true, klic: true, stav: true },
-  });
-  const idByKlic = new Map(exist.map((i) => [i.klic, i.id]));
+  const idByKlic = new Map<string, string>();
   let novych = 0;
 
   for (let i = 0; i < klice.length; i++) {
     const klic = klice[i];
     const nazev = unique.get(klic) as string;
-    const ex = exist.find((row) => row.klic === klic);
-    if (!ex) {
-      const created = await prisma.interpret.create({
-        data: { klic, nazev, stav: "aktivni", kanaly: { create: { kanal, stav: "aktivni" } } },
-      });
-      idByKlic.set(klic, created.id);
-      novych++;
-    } else {
-      if (ex.stav === "vyrazeno") {
-        await prisma.interpret.update({ where: { id: ex.id }, data: { stav: "aktivni" } });
-      }
-      await prisma.kanalPrislusnost.upsert({
-        where: { interpretId_kanal: { interpretId: ex.id, kanal } },
-        create: { interpretId: ex.id, kanal, stav: "aktivni" },
-        update: { stav: "aktivni" },
-      });
-    }
+    const row = await prisma.interpret.upsert({
+      where: { klic },
+      create: { klic, nazev, stav: "aktivni" },
+      update: { stav: "aktivni" },
+    });
+    if (row.createdAt.getTime() === row.updatedAt.getTime()) novych++;
+    idByKlic.set(klic, row.id);
+    await prisma.kanalPrislusnost.upsert({
+      where: { interpretId_kanal: { interpretId: row.id, kanal } },
+      create: { interpretId: row.id, kanal, stav: "aktivni" },
+      update: { stav: "aktivni" },
+    });
   }
 
   const existSkladby = await prisma.skladba.findMany({ select: { nazevSurovy: true } });
@@ -106,21 +96,25 @@ export async function ingestKanal(kanal: "cz" | "com") {
     const hostHrany = r.hoste
       .map((h) => idByKlic.get(slugKlic(h)))
       .filter((id): id is string => Boolean(id) && id !== interpretId);
-    await prisma.skladba.create({
-      data: {
-        nazev: r.nazevSkladby,
-        nazevSurovy: surovy,
-        hosteRaw: r.hoste,
-        vPlaylistu: true,
-        interpreti: {
-          create: [{ interpretId, role: "primarni" }].concat(
-            hostHrany.map((id) => ({ interpretId: id, role: "host" }))
-          ),
+    try {
+      await prisma.skladba.create({
+        data: {
+          nazev: r.nazevSkladby,
+          nazevSurovy: surovy,
+          hosteRaw: r.hoste,
+          vPlaylistu: true,
+          interpreti: {
+            create: [{ interpretId, role: "primarni" }].concat(
+              hostHrany.map((id) => ({ interpretId: id, role: "host" }))
+            ),
+          },
         },
-      },
-    });
-    skladbaIds.add(surovy);
-    skladebNovych++;
+      });
+      skladbaIds.add(surovy);
+      skladebNovych++;
+    } catch {
+      skladbaIds.add(surovy);
+    }
   }
 
   const videne = new Set(klice);
