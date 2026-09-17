@@ -13,8 +13,10 @@ export async function POST(req: NextRequest) {
   const kanal = parseKanal(req.nextUrl.searchParams.get("kanal"));
   if (!kanal) return NextResponse.json({ chyba: "kanal cz|com" }, { status: 400 });
   if (kanal === "com") return NextResponse.json({ chyba: "COM TSV ještě není" }, { status: 400 });
+  const offset = Number(req.nextUrl.searchParams.get("offset") || "0") || 0;
+  const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") || "80") || 80, 150);
   try {
-    const vysledek = await ingestKanal(kanal);
+    const vysledek = await ingestKanal(kanal, { offset, limit });
     return NextResponse.json(vysledek);
   } catch (e) {
     return NextResponse.json({ chyba: e instanceof Error ? e.message : "ingest" }, { status: 500 });
