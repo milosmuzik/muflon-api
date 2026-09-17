@@ -1,1 +1,5 @@
-PLACEHOLDER
+# Zdroj: milosmuzik/muflon-core prisma/data/playlist.tsv
+# Sloupce: Interpret<TAB>Skladba
+# Řádků skladeb: 1918 (včetně feat v poli interpreta, včetně promo Rádio Muflon)
+# Toto není druhá kopie playlistu. Ingest čte soubor v Core, dokud sem nepřijde export.
+# Raw: https://raw.githubusercontent.com/milosmuzik/muflon-core/main/prisma/data/playlist.tsv
