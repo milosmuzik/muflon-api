@@ -1,5 +1,5 @@
 # Zdroj: milosmuzik/muflon-core prisma/data/playlist.tsv
 # Sloupce: Interpret<TAB>Skladba
-# Řádků skladeb: 1918 (včetně feat v poli interpreta, včetně promo Rádio Muflon)
-# Toto není druhá kopie playlistu. Ingest čte soubor v Core, dokud sem nepřijde export.
+# Ingest přeskočí: Interpret = Rádio Muflon (Promo_*), www.sapho.cz a jiné reklamy.
+# Vanaheim v tomto TSV = česká kapela (Devět světů, Yggdrasil, Ásgard). klic=vanaheim. Není to Core homonymum, nezakládat blok jen proto, že v Core byl hack.
 # Raw: https://raw.githubusercontent.com/milosmuzik/muflon-core/main/prisma/data/playlist.tsv
