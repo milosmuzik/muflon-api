@@ -6,8 +6,6 @@ const TSV_URL: Record<string, string> = {
   cz: "https://raw.githubusercontent.com/milosmuzik/muflon-core/main/prisma/data/playlist.tsv",
 };
 
-const MIN_POMER = 0.5;
-
 type Radek = {
   interpretSurovy: string;
   skladbaSurova: string;
@@ -17,7 +15,12 @@ type Radek = {
   nazevSkladby: string;
 };
 
-export async function ingestKanal(kanal: "cz" | "com") {
+export async function ingestKanal(
+  kanal: "cz" | "com",
+  volby: { offset?: number; limit?: number } = {}
+) {
+  const offset = volby.offset ?? 0;
+  const limit = volby.limit ?? 80;
   const url = TSV_URL[kanal];
   if (!url) throw new Error(`TSV pro kanál ${kanal} není`);
 
@@ -26,12 +29,7 @@ export async function ingestKanal(kanal: "cz" | "com") {
   const text = await res.text();
   const radky = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (radky.length < 2) throw new Error("prázdný TSV");
-
   const data = radky.slice(1);
-  const predchozi = await prisma.ingestStav.findUnique({ where: { id: kanal } });
-  if (predchozi && predchozi.radku > 20 && data.length < predchozi.radku * MIN_POMER) {
-    return { stop: true, duvod: "TSV výrazně kratší než minule", minule: predchozi.radku, ted: data.length };
-  }
 
   const parsed: Radek[] = [];
   let preskoceno = 0;
@@ -64,38 +62,37 @@ export async function ingestKanal(kanal: "cz" | "com") {
   const unique = new Map<string, string>();
   for (const r of parsed) unique.set(r.klic, r.primarni);
   const klice = Array.from(unique.keys());
+  const davka = klice.slice(offset, offset + limit);
+  const davkaSet = new Set(davka);
   const idByKlic = new Map<string, string>();
   let novych = 0;
 
-  for (let i = 0; i < klice.length; i++) {
-    const klic = klice[i];
+  for (let i = 0; i < davka.length; i++) {
+    const klic = davka[i];
     const nazev = unique.get(klic) as string;
     const row = await prisma.interpret.upsert({
       where: { klic },
       create: { klic, nazev, stav: "aktivni" },
       update: { stav: "aktivni" },
     });
-    if (row.createdAt.getTime() === row.updatedAt.getTime()) novych++;
     idByKlic.set(klic, row.id);
     await prisma.kanalPrislusnost.upsert({
       where: { interpretId_kanal: { interpretId: row.id, kanal } },
       create: { interpretId: row.id, kanal, stav: "aktivni" },
       update: { stav: "aktivni" },
     });
+    novych++;
   }
 
   const existSkladby = await prisma.skladba.findMany({ select: { nazevSurovy: true } });
   const skladbaIds = new Set(existSkladby.map((s) => s.nazevSurovy));
   let skladebNovych = 0;
-
   for (const r of parsed) {
+    if (!davkaSet.has(r.klic)) continue;
     const surovy = r.interpretSurovy + "\t" + r.skladbaSurova;
     if (skladbaIds.has(surovy)) continue;
     const interpretId = idByKlic.get(r.klic);
     if (!interpretId) continue;
-    const hostHrany = r.hoste
-      .map((h) => idByKlic.get(slugKlic(h)))
-      .filter((id): id is string => Boolean(id) && id !== interpretId);
     try {
       await prisma.skladba.create({
         data: {
@@ -103,11 +100,7 @@ export async function ingestKanal(kanal: "cz" | "com") {
           nazevSurovy: surovy,
           hosteRaw: r.hoste,
           vPlaylistu: true,
-          interpreti: {
-            create: [{ interpretId, role: "primarni" }].concat(
-              hostHrany.map((id) => ({ interpretId: id, role: "host" }))
-            ),
-          },
+          interpreti: { create: [{ interpretId, role: "primarni" }] },
         },
       });
       skladbaIds.add(surovy);
@@ -117,38 +110,28 @@ export async function ingestKanal(kanal: "cz" | "com") {
     }
   }
 
-  const videne = new Set(klice);
-  const aktivni = await prisma.kanalPrislusnost.findMany({
-    where: { kanal, stav: "aktivni" },
-    include: { interpret: { select: { id: true, klic: true } } },
-  });
-  let vyrazeno = 0;
-  for (const p of aktivni) {
-    if (videne.has(p.interpret.klic)) continue;
-    await prisma.kanalPrislusnost.update({ where: { id: p.id }, data: { stav: "vyrazeno" } });
-    const jine = await prisma.kanalPrislusnost.count({
-      where: { interpretId: p.interpretId, stav: "aktivni", NOT: { kanal } },
+  const dalsi = offset + limit;
+  const hotovo = dalsi >= klice.length;
+  if (hotovo) {
+    await prisma.ingestStav.upsert({
+      where: { id: kanal },
+      create: { id: kanal, radku: data.length },
+      update: { radku: data.length },
     });
-    if (jine === 0) {
-      await prisma.interpret.update({ where: { id: p.interpretId }, data: { stav: "vyrazeno" } });
-    }
-    vyrazeno++;
   }
-
-  await prisma.ingestStav.upsert({
-    where: { id: kanal },
-    create: { id: kanal, radku: data.length },
-    update: { radku: data.length },
-  });
 
   return {
     stop: false,
     kanal,
-    radkuTsv: data.length,
-    interpreti: unique.size,
+    offset,
+    limit,
+    dalsiOffset: hotovo ? null : dalsi,
+    hotovo,
+    interpretuCelkem: klice.length,
+    vDavce: davka.length,
     novychInterpretu: novych,
     skladebNovych,
     preskoceno,
-    vyrazeno,
+    radkuTsv: data.length,
   };
 }
