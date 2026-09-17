@@ -1,5 +1,0 @@
-{
-  "functions": {
-    "app/api/ingest/route.ts": { "maxDuration": 60 }
-  }
-}
