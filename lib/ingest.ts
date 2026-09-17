@@ -48,7 +48,7 @@ export async function ingestKanal(kanal: "cz" | "com") {
     const zInterpret = rozdelFeat(interpretSurovy);
     const zSkladba = rozdelFeat(skladbaSurova);
     const primarni = zInterpret.primarni;
-    const hoste = [...zInterpret.hoste, ...zSkladba.hoste.filter((h) => h !== primarni)];
+    const hoste = zInterpret.hoste.concat(zSkladba.hoste.filter((h) => h !== primarni));
     const klic = slugKlic(primarni);
     if (!klic) continue;
     parsed.push({
@@ -63,16 +63,19 @@ export async function ingestKanal(kanal: "cz" | "com") {
 
   const unique = new Map<string, string>();
   for (const r of parsed) unique.set(r.klic, r.primarni);
+  const klice = Array.from(unique.keys());
 
   const exist = await prisma.interpret.findMany({
-    where: { klic: { in: [...unique.keys()] } },
+    where: { klic: { in: klice } },
     select: { id: true, klic: true, stav: true },
   });
   const idByKlic = new Map(exist.map((i) => [i.klic, i.id]));
   let novych = 0;
 
-  for (const [klic, nazev] of unique) {
-    const ex = exist.find((i) => i.klic === klic);
+  for (let i = 0; i < klice.length; i++) {
+    const klic = klice[i];
+    const nazev = unique.get(klic) as string;
+    const ex = exist.find((row) => row.klic === klic);
     if (!ex) {
       const created = await prisma.interpret.create({
         data: { klic, nazev, stav: "aktivni", kanaly: { create: { kanal, stav: "aktivni" } } },
@@ -96,7 +99,7 @@ export async function ingestKanal(kanal: "cz" | "com") {
   let skladebNovych = 0;
 
   for (const r of parsed) {
-    const surovy = `${r.interpretSurovy}\t${r.skladbaSurova}`;
+    const surovy = r.interpretSurovy + "\t" + r.skladbaSurova;
     if (skladbaIds.has(surovy)) continue;
     const interpretId = idByKlic.get(r.klic);
     if (!interpretId) continue;
@@ -110,7 +113,9 @@ export async function ingestKanal(kanal: "cz" | "com") {
         hosteRaw: r.hoste,
         vPlaylistu: true,
         interpreti: {
-          create: [{ interpretId, role: "primarni" }, ...hostHrany.map((id) => ({ interpretId: id, role: "host" }))],
+          create: [{ interpretId, role: "primarni" }].concat(
+            hostHrany.map((id) => ({ interpretId: id, role: "host" }))
+          ),
         },
       },
     });
@@ -118,7 +123,7 @@ export async function ingestKanal(kanal: "cz" | "com") {
     skladebNovych++;
   }
 
-  const videne = new Set(unique.keys());
+  const videne = new Set(klice);
   const aktivni = await prisma.kanalPrislusnost.findMany({
     where: { kanal, stav: "aktivni" },
     include: { interpret: { select: { id: true, klic: true } } },
